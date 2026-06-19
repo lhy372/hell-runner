@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地狱狂奔 - 马浩然</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Creepster&family=Noto+Sans+SC:wght@400;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #0a0000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Noto Sans SC', sans-serif;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            max-width: 1200px;
+            max-height: 700px;
+        }
+        
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(10, 0, 0, 0.95);
+            z-index: 10;
+        }
+        
+        #gameOverScreen {
+            display: none;
+        }
+        
+        .title {
+            font-family: 'Creepster', cursive;
+            font-size: 4rem;
+            color: #8b0000;
+            text-shadow: 0 0 20px #ff0000, 0 0 40px #8b0000;
+            margin-bottom: 20px;
+            animation: flicker 3s infinite;
+        }
+        
+        .subtitle {
+            font-size: 1.5rem;
+            color: #3d5c3d;
+            margin-bottom: 40px;
+        }
+        
+        .instructions {
+            color: #666;
+            font-size: 1rem;
+            text-align: center;
+            line-height: 2;
+            margin-bottom: 30px;
+        }
+        
+        .instructions span {
+            color: #8b0000;
+        }
+        
+        .btn {
+            font-family: 'Creepster', cursive;
+            font-size: 1.8rem;
+            padding: 15px 50px;
+            background: linear-gradient(180deg, #3d0000 0%, #1a0000 100%);
+            border: 2px solid #8b0000;
+            color: #ff4444;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-shadow: 0 0 10px #ff0000;
+        }
+        
+        .btn:hover {
+            background: linear-gradient(180deg, #5d0000 0%, #2a0000 100%);
+            box-shadow: 0 0 30px rgba(139, 0, 0, 0.5);
+            transform: scale(1.05);
+        }
+        
+        .score-display {
+            font-size: 2rem;
+            color: #8b0000;
+            margin: 20px 0;
+        }
+        
+        .high-score {
+            font-size: 1.2rem;
+            color: #3d5c3d;
+            margin-bottom: 30px;
+        }
+        
+        @keyframes flicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+            75% { opacity: 0.95; }
+            92% { opacity: 0.7; }
+        }
+        
+        #horrorText {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+        
+        .horror-message {
+            position: absolute;
+            font-family: 'Creepster', cursive;
+            font-size: 2rem;
+            color: #8b0000;
+            text-shadow: 0 0 10px #ff0000, 0 0 20px #8b0000;
+            animation: pulse 2s infinite;
+            white-space: nowrap;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.7; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.05); }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="horrorText"></div>
+        
+        <div id="startScreen">
+            <div class="title">地狱狂奔</div>
+            <div class="subtitle">马浩然的无尽梦魇</div>
+            <div class="instructions">
+                <span>空格键 / 点击</span> - 跳跃（支持二段跳）<br>
+                <span>↓ 方向键</span> - 下蹲躲避<br><br>
+                躲避障碍，收集鬼火白骨<br>
+                地狱深处，无处可逃...
+            </div>
+            <button class="btn" id="startBtn">坠入地狱</button>
+        </div>
+        
+        <div id="gameOverScreen">
+            <div class="title">游戏结束</div>
+            <div class="score-display">得分: <span id="finalScore">0</span></div>
+            <div class="high-score">最高分: <span id="highScore">0</span></div>
+            <button class="btn" id="restartBtn">再来一次</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const horrorText = document.getElementById('horrorText');
+        
+        canvas.width = 1200;
+        canvas.height = 700;
+        
+        // Game state
+        let gameRunning = false;
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('hellRunnerHighScore')) || 0;
+        let gameSpeed = 6;
+        let groundY = 550;
+        let frameCount = 0;
+        
+        // Horror text triggers - 原有的保留
+        const horrorTriggers = {
+            10: '都下地狱吧',
+            20: '你不该作弊',
+            30: '无处可逃',
+            40: '作弊就要下地狱',
+            50: '黑暗将吞噬一切',
+            60: '偷偷撇一眼',
+            70: '道德在哭喊',
+            80: '永世沉沦',
+            90: '你不该作弊',
+            100: '欢迎来到地狱',
+            120: '作弊就要下地狱',
+            140: '道德在哭喊',
+            160: '黑暗将吞噬一切',
+            180: '都下地狱吧',
+            200: '欢迎来到地狱',
+            250: '无处可逃',
+            300: '永世沉沦'
+        };
+        let triggeredMessages = new Set();
+        
+        // 随机环绕字幕池 - 按时间间隔循环
+        const rotatingMessages = [
+            '都下地狱吧',
+            '无处可逃',
+            '黑暗将吞噬一切',
+            '永世沉沦',
+            '欢迎来到地狱',
+            '你不该作弊',
+            '作弊就要下地狱',
+            '偷偷撇一眼',
+            '道德在哭喊'
+        ];
+        let lastRotatingFrame = 0;
+        
+        // Player
+        const player = {
+            x: 150,
+            y: groundY - 120,
+            width: 80,
+            height: 120,
+            velocityY: 0,
+            isJumping: false,
+            canDoubleJump: true,
+            isDucking: false,
+            jumpForce: -18,
+            gravity: 0.8
+        };
+        
+        // Game objects
+        let obstacles = [];
+        let collectibles = [];
+        let particles = [];
+        let fogLayers = [];
+        let trees = [];
+        let groundCracks = [];
+        
+        // Initialize background elements
+        function initBackground() {
+            trees = [];
+            for (let i = 0; i < 8; i++) {
+                trees.push({
+                    x: i * 200 + Math.random() * 100,
+                    height: 150 + Math.random() * 100,
+                    branches: Math.floor(3 + Math.random() * 4)
+                });
+            }
+            
+            groundCracks = [];
+            for (let i = 0; i < 15; i++) {
+                groundCracks.push({
+                    x: i * 100 + Math.random() * 80,
+                    width: 30 + Math.random() * 50,
+                    glow: Math.random()
+                });
+            }
+            
+            fogLayers = [
+                { y: 0, speed: 0.5, opacity: 0.3 },
+                { y: 100, speed: 0.8, opacity: 0.2 },
+                { y: 200, speed: 0.3, opacity: 0.15 }
+            ];
+        }
+        
+        // Draw the horror character 马浩然
+        function drawCharacter() {
+            const px = player.x;
+            const py = player.y;
+            const duckingOffset = player.isDucking ? 40 : 0;
+            const h = player.height - duckingOffset;
+            
+            ctx.save();
+            
+            // Create horror skin gradient
+            const skinGrad = ctx.createRadialGradient(px + 40, py + 30, 0, px + 40, py + 50, 80);
+            skinGrad.addColorStop(0, '#2a4a3a');
+            skinGrad.addColorStop(0.5, '#1a3a2a');
+            skinGrad.addColorStop(0.8, '#1a2a2a');
+            skinGrad.addColorStop(1, '#0a1515');
+            
+            // Draw body/clothes (bottom part)
+            if (!player.isDucking) {
+                ctx.fillStyle = '#1a3a3a';
+                ctx.fillRect(px + 15, py + 80, 50, 40);
+                
+                // Collar detail
+                ctx.fillStyle = '#2a4a4a';
+                ctx.fillRect(px + 20, py + 80, 40, 5);
+            }
+            
+            // Neck
+            ctx.fillStyle = '#1a3a2a';
+            ctx.fillRect(px + 30, py + 65, 20, 20);
+            
+            // Head base
+            ctx.fillStyle = skinGrad;
+            ctx.beginPath();
+            ctx.ellipse(px + 40, py + 40, 38, 42, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Green overlay on face
+            ctx.fillStyle = 'rgba(40, 80, 60, 0.4)';
+            ctx.beginPath();
+            ctx.ellipse(px + 40, py + 35, 35, 38, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Hair - short black hair
+            ctx.fillStyle = '#0a0a0a';
+            ctx.beginPath();
+            ctx.ellipse(px + 40, py + 10, 36, 18, 0, Math.PI, 0);
+            ctx.fill();
+            ctx.fillRect(px + 5, py + 5, 70, 15);
+            
+            // Hair texture
+            for (let i = 0; i < 8; i++) {
+                ctx.fillStyle = '#151515';
+                ctx.fillRect(px + 8 + i * 9, py + 2, 4, 12);
+            }
+            
+            // Eyebrows (faint)
+            ctx.strokeStyle = '#2a3a2a';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(px + 18, py + 28);
+            ctx.quadraticCurveTo(px + 28, py + 24, px + 35, py + 28);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px + 45, py + 28);
+            ctx.quadraticCurveTo(px + 52, py + 24, px + 62, py + 28);
+            ctx.stroke();
+            
+            // Closed eyes - squeezed shut with creepy smile
+            ctx.fillStyle = '#0a1a15';
+            ctx.beginPath();
+            ctx.moveTo(px + 15, py + 38);
+            ctx.quadraticCurveTo(px + 25, py + 32, px + 35, py + 38);
+            ctx.quadraticCurveTo(px + 30, py + 42, px + 15, py + 38);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.moveTo(px + 45, py + 38);
+            ctx.quadraticCurveTo(px + 55, py + 32, px + 65, py + 38);
+            ctx.quadraticCurveTo(px + 55, py + 42, px + 45, py + 38);
+            ctx.fill();
+            
+            // Eye wrinkles
+            ctx.strokeStyle = '#3a5a4a';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.moveTo(px + 18 + i * 3, py + 35 - i * 2);
+                ctx.lineTo(px + 22 + i * 3, py + 33 - i * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(px + 58 - i * 3, py + 35 - i * 2);
+                ctx.lineTo(px + 54 - i * 3, py + 33 - i * 2);
+                ctx.stroke();
+            }
+            
+            // Nose - green tinted
+            ctx.fillStyle = '#2a4a3a';
+            ctx.beginPath();
+            ctx.moveTo(px + 35, py + 45);
+            ctx.lineTo(px + 40, py + 55);
+            ctx.lineTo(px + 45, py + 45);
+            ctx.fill();
+            
+            // Distorted mouth - creepy wide smile
+            ctx.fillStyle = '#1a0a0a';
+            ctx.beginPath();
+            ctx.moveTo(px + 5, py + 55);
+            ctx.quadraticCurveTo(px + 40, py + 45, px + 75, py + 55);
+            ctx.quadraticCurveTo(px + 40, py + 75, px + 5, py + 55);
+            ctx.fill();
+            
+            // Inside of mouth
+            ctx.fillStyle = '#2a0505';
+            ctx.beginPath();
+            ctx.ellipse(px + 40, py + 60, 25, 12, 0, 0, Math.PI);
+            ctx.fill();
+            
+            // THE LONG RED TONGUE
+            const tongueLength = player.isDucking ? 60 : 100;
+            const tongueGrad = ctx.createLinearGradient(px + 40, py + 65, px + 40, py + 65 + tongueLength);
+            tongueGrad.addColorStop(0, '#8b0000');
+            tongueGrad.addColorStop(0.3, '#a01010');
+            tongueGrad.addColorStop(0.6, '#6b0000');
+            tongueGrad.addColorStop(1, '#4a0000');
+            
+            // Tongue body
+            ctx.fillStyle = tongueGrad;
+            ctx.beginPath();
+            ctx.moveTo(px + 25, py + 65);
+            ctx.quadraticCurveTo(px + 40, py + 60, px + 55, py + 65);
+            ctx.quadraticCurveTo(px + 60, py + 90, px + 55, py + 65 + tongueLength * 0.7);
+            ctx.quadraticCurveTo(px + 40, py + 70 + tongueLength, px + 25, py + 65 + tongueLength * 0.7);
+            ctx.quadraticCurveTo(px + 20, py + 90, px + 25, py + 65);
+            ctx.fill();
+            
+            // Tongue black outline
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(px + 25, py + 65);
+            ctx.quadraticCurveTo(px + 40, py + 60, px + 55, py + 65);
+            ctx.stroke();
+            
+            // Tongue texture/spots
+            ctx.fillStyle = 'rgba(150, 0, 0, 0.5)';
+            for (let i = 0; i < 6; i++) {
+                ctx.beginPath();
+                ctx.ellipse(px + 35 + Math.random() * 10, py + 80 + i * 12, 6, 4, 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Ear (left side visible)
+            ctx.fillStyle = '#2a4a3a';
+            ctx.beginPath();
+            ctx.ellipse(px + 5, py + 40, 8, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#1a3a2a';
+            ctx.beginPath();
+            ctx.ellipse(px + 6, py + 40, 4, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Noise/grain effect on skin
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            for (let i = 0; i < 50; i++) {
+                ctx.fillRect(px + Math.random() * 80, py + Math.random() * 80, 2, 2);
+            }
+            
+            ctx.restore();
+        }
+        
+        // Draw hell environment
+        function drawEnvironment() {
+            // Sky gradient - dark red
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
+            skyGrad.addColorStop(0, '#0a0000');
+            skyGrad.addColorStop(0.3, '#1a0505');
+            skyGrad.addColorStop(0.6, '#2a0808');
+            skyGrad.addColorStop(1, '#1a0a0a');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, canvas.width, groundY);
+            
+            // Distant mountains
+            ctx.fillStyle = '#150505';
+            ctx.beginPath();
+            ctx.moveTo(0, groundY - 100);
+            for (let i = 0; i < canvas.width; i += 50) {
+                ctx.lineTo(i, groundY - 100 - Math.sin(i * 0.01 + frameCount * 0.001) * 30 - Math.random() * 10);
+            }
+            ctx.lineTo(canvas.width, groundY);
+            ctx.lineTo(0, groundY);
+            ctx.fill();
+            
+            // Dead trees in background
+            trees.forEach((tree, i) => {
+                const tx = (tree.x - frameCount * 0.5) % (canvas.width + 200) - 100;
+                drawDeadTree(tx, groundY - 50, tree.height, tree.branches);
+            });
+            
+            // Ground - lava stone
+            const groundGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
+            groundGrad.addColorStop(0, '#2a1010');
+            groundGrad.addColorStop(0.3, '#1a0808');
+            groundGrad.addColorStop(1, '#0a0505');
+            ctx.fillStyle = groundGrad;
+            ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+            
+            // Ground surface stones
+            ctx.fillStyle = '#1a0a0a';
+            for (let i = 0; i < canvas.width; i += 30) {
+                const offset = (i + frameCount * 0.5) % canvas.width;
+                ctx.beginPath();
+                ctx.ellipse(offset, groundY + 5, 20, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Ground cracks with blood glow
+            groundCracks.forEach(crack => {
+                const cx = (crack.x - frameCount * gameSpeed * 0.3) % (canvas.width + 100);
+                ctx.strokeStyle = `rgba(139, 0, 0, ${0.3 + crack.glow * 0.4})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(cx, groundY);
+                ctx.lineTo(cx + crack.width * 0.3, groundY + 20);
+                ctx.lineTo(cx + crack.width * 0.5, groundY + 40);
+                ctx.lineTo(cx + crack.width, groundY + 60);
+                ctx.stroke();
+                
+                // Blood glow
+                ctx.shadowColor = '#8b0000';
+                ctx.shadowBlur = 10;
+                ctx.fillStyle = `rgba(139, 0, 0, ${0.2 + crack.glow * 0.3})`;
+                ctx.fillRect(cx - 2, groundY, crack.width + 4, 5);
+                ctx.shadowBlur = 0;
+            });
+            
+            // Floating black fog layers
+            fogLayers.forEach(fog => {
+                const fogX = (frameCount * fog.speed) % (canvas.width + 400) - 200;
+                ctx.fillStyle = `rgba(10, 10, 15, ${fog.opacity})`;
+                for (let i = 0; i < 5; i++) {
+                    ctx.beginPath();
+                    ctx.ellipse(fogX + i * 250, fog.y, 200, 40, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            
+            // Overall fog overlay
+            ctx.fillStyle = 'rgba(5, 5, 10, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        // Draw dead/burning tree
+        function drawDeadTree(x, y, height, branches) {
+            ctx.strokeStyle = '#1a0a0a';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y - height);
+            ctx.stroke();
+            
+            ctx.strokeStyle = '#150808';
+            ctx.lineWidth = 4;
+            for (let i = 0; i < branches; i++) {
+                const by = y - height * 0.3 - i * (height * 0.15);
+                const dir = i % 2 === 0 ? 1 : -1;
+                ctx.beginPath();
+                ctx.moveTo(x, by);
+                ctx.quadraticCurveTo(x + dir * 30, by - 20, x + dir * 50, by - 10 - Math.random() * 20);
+                ctx.stroke();
+            }
+            
+            // Barely visible leaves/branches
+            ctx.fillStyle = '#0a0505';
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.ellipse(x + (Math.random() - 0.5) * 40, y - height + Math.random() * 30, 5, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        // Spawn obstacles
+        function spawnObstacle() {
+            const types = ['spike', 'cactus', 'ghost', 'bird'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            let obs = {
+                type,
+                x: canvas.width + 50,
+                passed: false
+            };
+            
+            switch(type) {
+                case 'spike':
+                    obs.y = groundY - 80;
+                    obs.width = 40;
+                    obs.height = 80;
+                    break;
+                case 'cactus':
+                    obs.y = groundY - 60;
+                    obs.width = 50;
+                    obs.height = 60;
+                    break;
+                case 'ghost':
+                    obs.y = groundY - 150 - Math.random() * 50;
+                    obs.width = 60;
+                    obs.height = 80;
+                    obs.floatOffset = Math.random() * Math.PI * 2;
+                    break;
+                case 'bird':
+                    obs.y = player.isDucking ? groundY - 60 : groundY - 120;
+                    obs.width = 70;
+                    obs.height = 40;
+                    obs.wingFrame = 0;
+                    break;
+            }
+            
+            obstacles.push(obs);
+        }
+        
+        // Spawn collectibles
+        function spawnCollectible() {
+            const types = ['fire', 'bone', 'rune'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            const obs = {
+                type,
+                x: canvas.width + 50,
+                y: groundY - 80 - Math.random() * 100,
+                width: 30,
+                height: 30,
+                glow: 0
+            };
+            
+            collectibles.push(obs);
+        }
+        
+        // Draw obstacles
+        function drawObstacles() {
+            obstacles.forEach(obs => {
+                switch(obs.type) {
+                    case 'spike':
+                        drawSpike(obs);
+                        break;
+                    case 'cactus':
+                        drawCactus(obs);
+                        break;
+                    case 'ghost':
+                        drawGhost(obs);
+                        break;
+                    case 'bird':
+                        drawBird(obs);
+                        break;
+                }
+            });
+        }
+        
+        function drawSpike(obs) {
+            ctx.fillStyle = '#2a1a1a';
+            ctx.beginPath();
+            ctx.moveTo(obs.x, obs.y + obs.height);
+            ctx.lineTo(obs.x + obs.width / 2, obs.y);
+            ctx.lineTo(obs.x + obs.width, obs.y + obs.height);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Spikes detail
+            ctx.fillStyle = '#1a0a0a';
+            ctx.beginPath();
+            ctx.moveTo(obs.x + 5, obs.y + obs.height);
+            ctx.lineTo(obs.x + obs.width / 2, obs.y + 10);
+            ctx.lineTo(obs.x + obs.width / 2 + 5, obs.y + obs.height);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Red glow at base
+            ctx.shadowColor = '#8b0000';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = 'rgba(139, 0, 0, 0.3)';
+            ctx.fillRect(obs.x, obs.y + obs.height - 5, obs.width, 5);
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawCactus(obs) {
+            // Main body
+            ctx.fillStyle = '#3a1a1a';
+            ctx.beginPath();
+            ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Blood drips
+            ctx.fillStyle = '#5a0000';
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.ellipse(obs.x + 10 + i * 8, obs.y + obs.height + 5 + Math.sin(frameCount * 0.1 + i) * 3, 3, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Mutated spikes
+            ctx.strokeStyle = '#2a0a0a';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.moveTo(obs.x + obs.width / 2, obs.y + obs.height / 2);
+                ctx.lineTo(
+                    obs.x + obs.width / 2 + Math.cos(angle) * (obs.width / 2 + 15),
+                    obs.y + obs.height / 2 + Math.sin(angle) * (obs.height / 2 + 15)
+                );
+                ctx.stroke();
+            }
+        }
+        
+        function drawGhost(obs) {
+            const floatY = Math.sin(frameCount * 0.05 + obs.floatOffset) * 10;
+            
+            ctx.fillStyle = 'rgba(30, 40, 50, 0.8)';
+            ctx.beginPath();
+            ctx.ellipse(obs.x + obs.width / 2, obs.y + floatY + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Ghostly trail
+            ctx.fillStyle = 'rgba(30, 40, 50, 0.3)';
+            ctx.beginPath();
+            ctx.ellipse(obs.x + obs.width / 2, obs.y + floatY + obs.height / 2 + 20, obs.width / 3, obs.height / 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Eyes
+            ctx.fillStyle = '#8b0000';
+            ctx.beginPath();
+            ctx.ellipse(obs.x + obs.width / 3, obs.y + floatY + obs.height / 3, 5, 8, 0, 0, Math.PI * 2);
+            ctx.ellipse(obs.x + obs.width * 2 / 3, obs.y + floatY + obs.height / 3, 5, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Eerie glow
+            ctx.shadowColor = '#3d5c3d';
+            ctx.shadowBlur = 20;
+            ctx.strokeStyle = 'rgba(61, 92, 61, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(obs.x + obs.width / 2, obs.y + floatY + obs.height / 2, obs.width / 2 + 5, obs.height / 2 + 5, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawBird(obs) {
+            const wingY = Math.sin(frameCount * 0.3) * 10;
+            
+            ctx.fillStyle = '#1a0a0a';
+            // Body
+            ctx.beginPath();
+            ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Wings
+            ctx.beginPath();
+            ctx.moveTo(obs.x + 20, obs.y + 20);
+            ctx.quadraticCurveTo(obs.x - 10, obs.y - 20 + wingY, obs.x - 20, obs.y + 10 + wingY);
+            ctx.quadraticCurveTo(obs.x, obs.y + 20, obs.x + 20, obs.y + 20);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.moveTo(obs.x + obs.width - 20, obs.y + 20);
+            ctx.quadraticCurveTo(obs.x + obs.width + 10, obs.y - 20 - wingY, obs.x + obs.width + 20, obs.y + 10 - wingY);
+            ctx.quadraticCurveTo(obs.x + obs.width, obs.y + 20, obs.x + obs.width - 20, obs.y + 20);
+            ctx.fill();
+            
+            // Evil eyes
+            ctx.fillStyle = '#ff0000';
+            ctx.beginPath();
+            ctx.arc(obs.x + 25, obs.y + 18, 4, 0, Math.PI * 2);
+            ctx.arc(obs.x + 45, obs.y + 18, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Draw collectibles
+        function drawCollectibles() {
+            collectibles.forEach(c => {
+                c.glow = (c.glow + 0.05) % (Math.PI * 2);
+                const glowIntensity = 0.5 + Math.sin(c.glow) * 0.3;
+                
+                switch(c.type) {
+                    case 'fire':
+                        drawGhostFire(c, glowIntensity);
+                        break;
+                    case 'bone':
+                        drawBone(c, glowIntensity);
+                        break;
+                    case 'rune':
+                        drawRune(c, glowIntensity);
+                        break;
+                }
+            });
+        }
+        
+        function drawGhostFire(c, glow) {
+            ctx.shadowColor = '#3d5c3d';
+            ctx.shadowBlur = 20 * glow;
+            
+            // Fire base
+            ctx.fillStyle = `rgba(61, 92, 61, ${0.6 + glow * 0.4})`;
+            ctx.beginPath();
+            ctx.ellipse(c.x + 15, c.y + 20, 12, 15, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Inner flame
+            ctx.fillStyle = `rgba(100, 150, 100, ${0.8 * glow})`;
+            ctx.beginPath();
+            ctx.ellipse(c.x + 15, c.y + 18, 6, 10, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Bright center
+            ctx.fillStyle = `rgba(200, 255, 200, ${0.9 * glow})`;
+            ctx.beginPath();
+            ctx.ellipse(c.x + 15, c.y + 15, 3, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawBone(c, glow) {
+            ctx.shadowColor = '#aaa';
+            ctx.shadowBlur = 15 * glow;
+            
+            ctx.strokeStyle = `rgba(200, 200, 200, ${0.6 + glow * 0.4})`;
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            
+            // Bone shape
+            ctx.beginPath();
+            ctx.moveTo(c.x + 5, c.y + 20);
+            ctx.lineTo(c.x + 25, c.y + 10);
+            ctx.stroke();
+            
+            // Joints
+            ctx.fillStyle = `rgba(180, 180, 180, ${0.6 + glow * 0.4})`;
+            ctx.beginPath();
+            ctx.arc(c.x + 5, c.y + 20, 5, 0, Math.PI * 2);
+            ctx.arc(c.x + 25, c.y + 10, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawRune(c, glow) {
+            ctx.shadowColor = '#8b0000';
+            ctx.shadowBlur = 20 * glow;
+            
+            ctx.fillStyle = `rgba(139, 0, 0, ${0.5 + glow * 0.5})`;
+            ctx.font = '24px serif';
+            ctx.fillText('☠', c.x + 5, c.y + 25);
+            
+            // Additional rune symbols
+            ctx.fillStyle = `rgba(100, 0, 0, ${0.3 + glow * 0.3})`;
+            ctx.font = '16px serif';
+            ctx.fillText('✧', c.x, c.y + 10);
+            ctx.fillText('✧', c.x + 25, c.y + 30);
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        // Check collisions
+        function checkCollisions() {
+            const playerBox = {
+                x: player.x + 10,
+                y: player.y + (player.isDucking ? 40 : 0),
+                width: player.width - 20,
+                height: player.height - (player.isDucking ? 60 : 20)
+            };
+            
+            // Obstacle collisions
+            for (let obs of obstacles) {
+                let obsBox = { x: obs.x, y: obs.y, width: obs.width, height: obs.height };
+                
+                if (obs.type === 'ghost') {
+                    obsBox.y += Math.sin(frameCount * 0.05 + obs.floatOffset) * 10;
+                }
+                if (obs.type === 'bird') {
+                    obsBox.y = obs.y + Math.sin(frameCount * 0.3) * 10;
+                }
+                
+                if (playerBox.x < obsBox.x + obsBox.width &&
+                    playerBox.x + playerBox.width > obsBox.x &&
+                    playerBox.y < obsBox.y + obsBox.height &&
+                    playerBox.y + playerBox.height > obsBox.y) {
+                    return true;
+                }
+            }
+            
+            // Collectible collisions
+            for (let i = collectibles.length - 1; i >= 0; i--) {
+                const c = collectibles[i];
+                if (playerBox.x < c.x + c.width &&
+                    playerBox.x + playerBox.width > c.x &&
+                    playerBox.y < c.y + c.height &&
+                    playerBox.y + playerBox.height > c.y) {
+                    
+                    // Add particles
+                    for (let j = 0; j < 10; j++) {
+                        particles.push({
+                            x: c.x + 15,
+                            y: c.y + 15,
+                            vx: (Math.random() - 0.5) * 5,
+                            vy: (Math.random() - 0.5) * 5,
+                            life: 30,
+                            color: c.type === 'fire' ? '#3d5c3d' : c.type === 'bone' ? '#aaa' : '#8b0000'
+                        });
+                    }
+                    
+                    score += 5;
+                    collectibles.splice(i, 1);
+                }
+            }
+            
+            return false;
+        }
+        
+        // Update game state
+        function update() {
+            if (!gameRunning) return;
+            
+            frameCount++;
+            
+            // Update score
+            if (frameCount % 5 === 0) {
+                score++;
+            }
+            
+            // Check horror text triggers (分数触发 - 原有保留)
+            for (const [threshold, message] of Object.entries(horrorTriggers)) {
+                if (score >= parseInt(threshold) && !triggeredMessages.has(threshold)) {
+                    triggeredMessages.add(threshold);
+                    showHorrorText(message);
+                }
+            }
+            
+            // 随机环绕字幕 (每约 8 秒随机触发一条)
+            if (frameCount - lastRotatingFrame > 480 && Math.random() < 0.02) {
+                lastRotatingFrame = frameCount;
+                const randomMsg = rotatingMessages[Math.floor(Math.random() * rotatingMessages.length)];
+                showHorrorText(randomMsg);
+            }
+            
+            // Player physics
+            player.velocityY += player.gravity;
+            player.y += player.velocityY;
+            
+            if (player.y >= groundY - player.height) {
+                player.y = groundY - player.height;
+                player.velocityY = 0;
+                player.isJumping = false;
+                player.canDoubleJump = true;
+            }
+            
+            // Spawn obstacles
+            if (frameCount % Math.floor(80 - gameSpeed * 3) === 0) {
+                spawnObstacle();
+            }
+            
+            // Spawn collectibles
+            if (frameCount % 100 === 0 && Math.random() > 0.3) {
+                spawnCollectible();
+            }
+            
+            // Update obstacles
+            obstacles.forEach(obs => {
+                obs.x -= gameSpeed;
+            });
+            obstacles = obstacles.filter(obs => obs.x > -100);
+            
+            // Update collectibles
+            collectibles.forEach(c => {
+                c.x -= gameSpeed;
+            });
+            collectibles = collectibles.filter(c => c.x > -50);
+            
+            // Update particles
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+            });
+            particles = particles.filter(p => p.life > 0);
+            
+            // Increase difficulty
+            if (frameCount % 500 === 0 && gameSpeed < 15) {
+                gameSpeed += 0.5;
+            }
+            
+            // Check collisions
+            if (checkCollisions()) {
+                gameOver();
+            }
+        }
+        
+        // Draw particles
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 30;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+        }
+        
+        // Show horror text
+        function showHorrorText(message) {
+            horrorText.innerHTML = '';
+            
+            if (message === '欢迎来到地狱') {
+                // Full screen flash effect
+                ctx.fillStyle = 'rgba(139, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            const positions = [
+                { top: '5%', left: '10%' },
+                { top: '5%', right: '10%' },
+                { top: '45%', left: '5%' },
+                { top: '45%', right: '5%' },
+                { bottom: '10%', left: '15%' },
+                { bottom: '10%', right: '15%' },
+                { top: '25%', left: '50%' },
+                { bottom: '25%', right: '50%' }
+            ];
+            
+            for (let i = 0; i < 8; i++) {
+                const el = document.createElement('div');
+                el.className = 'horror-message';
+                const pos = positions[i];
+                Object.assign(el.style, pos);
+                el.textContent = message;
+                el.style.animationDelay = `${i * 0.2}s`;
+                horrorText.appendChild(el);
+            }
+            
+            horrorText.style.opacity = '1';
+            
+            setTimeout(() => {
+                horrorText.style.opacity = '0';
+            }, 3000);
+        }
+        
+        // Draw UI
+        function drawUI() {
+            // Score
+            ctx.fillStyle = '#8b0000';
+            ctx.font = 'bold 28px "Creepster", cursive';
+            ctx.textAlign = 'right';
+            ctx.shadowColor = '#ff0000';
+            ctx.shadowBlur = 10;
+            ctx.fillText(`分数: ${score}`, canvas.width - 30, 40);
+            ctx.shadowBlur = 0;
+            
+            // High score indicator
+            ctx.fillStyle = '#3d5c3d';
+            ctx.font = '16px "Noto Sans SC", sans-serif';
+            ctx.fillText(`最高: ${highScore}`, canvas.width - 30, 65);
+            
+            ctx.textAlign = 'left';
+        }
+        
+        // Main render loop
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            drawEnvironment();
+            drawCollectibles();
+            drawObstacles();
+            drawCharacter();
+            drawParticles();
+            drawUI();
+            
+            update();
+            
+            if (gameRunning) {
+                requestAnimationFrame(render);
+            }
+        }
+        
+        // Game controls
+        function jump() {
+            if (!gameRunning) return;
+            
+            if (player.isDucking) {
+                player.isDucking = false;
+                return;
+            }
+            
+            if (!player.isJumping) {
+                player.velocityY = player.jumpForce;
+                player.isJumping = true;
+            } else if (player.canDoubleJump) {
+                player.velocityY = player.jumpForce * 0.8;
+                player.canDoubleJump = false;
+            }
+        }
+        
+        function duck() {
+            if (!gameRunning || player.isJumping) return;
+            player.isDucking = true;
+        }
+        
+        function stopDuck() {
+            player.isDucking = false;
+        }
+        
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            }
+            if (e.code === 'ArrowDown') {
+                e.preventDefault();
+                duck();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowDown') {
+                stopDuck();
+            }
+        });
+        
+        canvas.addEventListener('click', () => jump());
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            jump();
+        });
+        
+        // Start game
+        function startGame() {
+            score = 0;
+            gameSpeed = 6;
+            frameCount = 0;
+            obstacles = [];
+            collectibles = [];
+            particles = [];
+            triggeredMessages.clear();
+            lastRotatingFrame = 0;
+            
+            player.y = groundY - player.height;
+            player.velocityY = 0;
+            player.isJumping = false;
+            player.canDoubleJump = true;
+            player.isDucking = false;
+            
+            initBackground();
+            
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            horrorText.style.opacity = '0';
+            
+            gameRunning = true;
+            render();
+        }
+        
+        // Game over
+        function gameOver() {
+            gameRunning = false;
+            
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('hellRunnerHighScore', highScore);
+            }
+            
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('highScore').textContent = highScore;
+            gameOverScreen.style.display = 'flex';
+        }
+        
+        // Button handlers
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('click', startGame);
+        
+        // Initial draw
+        initBackground();
+        drawEnvironment();
+    </script>
+</body>
+</html>
