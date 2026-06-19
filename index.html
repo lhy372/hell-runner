@@ -192,7 +192,262 @@
         let groundY = 550;
         let frameCount = 0;
         
-        // Horror text triggers - 原有的保留
+        // ========== 恐怖音效系统 (Web Audio API) ==========
+        let audioCtx = null;
+        let masterGain = null;
+        let droneStarted = false;
+        let lastEerieSound = 0;
+        
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.4;
+            masterGain.connect(audioCtx.destination);
+        }
+        
+        // 启动恐怖氛围底噪（低频持续的嗡鸣）
+        function startDrone() {
+            if (droneStarted || !audioCtx) return;
+            droneStarted = true;
+            
+            // 主低频 drone - 低沉的地狱氛围
+            const droneOsc = audioCtx.createOscillator();
+            droneOsc.type = 'sawtooth';
+            droneOsc.frequency.value = 40;
+            
+            const droneGain = audioCtx.createGain();
+            droneGain.gain.value = 0.08;
+            
+            const droneFilter = audioCtx.createBiquadFilter();
+            droneFilter.type = 'lowpass';
+            droneFilter.frequency.value = 120;
+            droneFilter.Q.value = 2;
+            
+            droneOsc.connect(droneFilter);
+            droneFilter.connect(droneGain);
+            droneGain.connect(masterGain);
+            droneOsc.start();
+            
+            // 次低频 - 微微的颤动
+            const subOsc = audioCtx.createOscillator();
+            subOsc.type = 'sine';
+            subOsc.frequency.value = 28;
+            
+            const subGain = audioCtx.createGain();
+            subGain.gain.value = 0.12;
+            
+            const subFilter = audioCtx.createBiquadFilter();
+            subFilter.type = 'lowpass';
+            subFilter.frequency.value = 60;
+            
+            subOsc.connect(subFilter);
+            subFilter.connect(subGain);
+            subGain.connect(masterGain);
+            subOsc.start();
+            
+            // LFO 调制 - 让底噪有呼吸感
+            const lfo = audioCtx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.15; // 很慢的呼吸节奏
+            const lfoGain = audioCtx.createGain();
+            lfoGain.gain.value = 8;
+            lfo.connect(lfoGain);
+            lfoGain.connect(droneOsc.frequency);
+            lfo.start();
+        }
+        
+        // 随机诡异音效
+        function playEerieSound() {
+            if (!audioCtx || !gameRunning) return;
+            const now = audioCtx.currentTime;
+            
+            // 随机选择诡异音效类型
+            const type = Math.floor(Math.random() * 4);
+            
+            if (type === 0) {
+                // 尖锐的高频啸叫
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 800 + Math.random() * 600;
+                filter.Q.value = 10;
+                
+                osc.type = 'sawtooth';
+                osc.frequency.value = 200 + Math.random() * 100;
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.06, now + 0.3);
+                gain.gain.linearRampToValueAtTime(0, now + 1.5);
+                osc.frequency.setValueAtTime(200 + Math.random() * 100, now);
+                osc.frequency.linearRampToValueAtTime(80, now + 1.5);
+                
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(masterGain);
+                osc.start(now);
+                osc.stop(now + 1.5);
+            } else if (type === 1) {
+                // 低沉的轰鸣
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 50 + Math.random() * 30;
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.15, now + 0.2);
+                gain.gain.linearRampToValueAtTime(0, now + 2);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start(now);
+                osc.stop(now + 2);
+            } else if (type === 2) {
+                // 诡异的铃声
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.value = 800 + Math.random() * 400;
+                gain.gain.setValueAtTime(0.04, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.5);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start(now);
+                osc.stop(now + 0.5);
+            } else {
+                // 扭曲的噪音
+                const bufferSize = audioCtx.sampleRate * 0.8;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * 0.3;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 400;
+                filter.Q.value = 5;
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.08, now + 0.1);
+                gain.gain.linearRampToValueAtTime(0, now + 0.8);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(masterGain);
+                noise.start(now);
+                noise.stop(now + 0.8);
+            }
+        }
+        
+        // 跳跃音效
+        function playJumpSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(120, now);
+            osc.frequency.exponentialRampToValueAtTime(400, now + 0.15);
+            osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.3);
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        }
+        
+        // 收集道具音效
+        function playCollectSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.2);
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start(now);
+            osc.stop(now + 0.2);
+        }
+        
+        // 死亡/游戏结束音效
+        function playDeathSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            
+            // 第一段：尖叫
+            const osc1 = audioCtx.createOscillator();
+            const gain1 = audioCtx.createGain();
+            osc1.type = 'sawtooth';
+            osc1.frequency.setValueAtTime(600, now);
+            osc1.frequency.exponentialRampToValueAtTime(100, now + 1);
+            gain1.gain.setValueAtTime(0.2, now);
+            gain1.gain.linearRampToValueAtTime(0, now + 1);
+            osc1.connect(gain1);
+            gain1.connect(masterGain);
+            osc1.start(now);
+            osc1.stop(now + 1);
+            
+            // 第二段：低沉的轰鸣
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.value = 45;
+            gain2.gain.setValueAtTime(0, now + 0.5);
+            gain2.gain.linearRampToValueAtTime(0.25, now + 1);
+            gain2.gain.linearRampToValueAtTime(0, now + 2.5);
+            osc2.connect(gain2);
+            gain2.connect(masterGain);
+            osc2.start(now);
+            osc2.stop(now + 2.5);
+            
+            // 噪音层
+            const bufferSize = audioCtx.sampleRate * 2;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * 0.5;
+            }
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 500;
+            const gain3 = audioCtx.createGain();
+            gain3.gain.setValueAtTime(0, now + 0.5);
+            gain3.gain.linearRampToValueAtTime(0.15, now + 1);
+            gain3.gain.linearRampToValueAtTime(0, now + 2.5);
+            noise.connect(filter);
+            filter.connect(gain3);
+            gain3.connect(masterGain);
+            noise.start(now);
+            noise.stop(now + 2.5);
+        }
+        
+        // 字幕触发音效
+        function playHorrorChime() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.linearRampToValueAtTime(150, now + 0.8);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.linearRampToValueAtTime(0, now + 1);
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start(now);
+            osc.stop(now + 1);
+        }
+        
+        // ========== Horror text triggers - 原有的保留
         const horrorTriggers = {
             10: '都下地狱吧',
             20: '你不该作弊',
@@ -886,6 +1141,7 @@
                     }
                     
                     score += 5;
+                    playCollectSound();
                     collectibles.splice(i, 1);
                 }
             }
@@ -917,6 +1173,12 @@
                 lastRotatingFrame = frameCount;
                 const randomMsg = rotatingMessages[Math.floor(Math.random() * rotatingMessages.length)];
                 showHorrorText(randomMsg);
+            }
+            
+            // 随机诡异环境音 (每 5-15 秒随机出现一次)
+            if (frameCount - lastEerieSound > 300 && Math.random() < 0.008) {
+                lastEerieSound = frameCount;
+                playEerieSound();
             }
             
             // Player physics
@@ -985,6 +1247,7 @@
         
         // Show horror text
         function showHorrorText(message) {
+            playHorrorChime();
             horrorText.innerHTML = '';
             
             if (message === '欢迎来到地狱') {
@@ -1070,9 +1333,11 @@
             if (!player.isJumping) {
                 player.velocityY = player.jumpForce;
                 player.isJumping = true;
+                playJumpSound();
             } else if (player.canDoubleJump) {
                 player.velocityY = player.jumpForce * 0.8;
                 player.canDoubleJump = false;
+                playJumpSound();
             }
         }
         
@@ -1111,6 +1376,9 @@
         
         // Start game
         function startGame() {
+            initAudio();
+            startDrone();
+            
             score = 0;
             gameSpeed = 6;
             frameCount = 0;
@@ -1139,6 +1407,7 @@
         // Game over
         function gameOver() {
             gameRunning = false;
+            playDeathSound();
             
             if (score > highScore) {
                 highScore = score;
