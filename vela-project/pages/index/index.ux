@@ -1,0 +1,695 @@
+<template>
+  <div class="page">
+    <canvas id="gameCanvas" class="canvas" type="2d"></canvas>
+  </div>
+</template>
+
+<script>
+  // ============================================
+  // 地狱狂奔 - 小米手环 9 版 (192 × 490)
+  // ============================================
+
+  // 屏幕尺寸
+  const SCREEN_W = 192;
+  const SCREEN_H = 490;
+
+  // 游戏状态
+  var state = 'menu'; // 'menu' | 'playing' | 'over'
+  var tick = 0;
+  var score = 0;
+  var best = 0;
+
+  // 玩家
+  var player = {
+    x: 80,
+    y: 420,
+    w: 32,
+    h: 50,
+    vy: 0,
+    jumping: false
+  };
+
+  var groundY = 420;
+  var gravity = 1.2;
+  var jumpForce = -16;
+  var speed = 4;
+
+  // 障碍物数组
+  var obstacles = [];
+  var ghosts = [];
+  var spikes = [];
+
+  // 粒子
+  var particles = [];
+
+  // 分数触发
+  var msg = '';
+  var msgTimer = 0;
+
+  // ============================================
+  // 初始化
+  // ============================================
+  function init() {
+    score = 0;
+    tick = 0;
+    player.x = 80;
+    player.y = groundY;
+    player.vy = 0;
+    player.jumping = false;
+    obstacles = [];
+    ghosts = [];
+    spikes = [];
+    particles = [];
+    speed = 4;
+    msg = '';
+    msgTimer = 0;
+  }
+
+  // ============================================
+  // 跳跃
+  // ============================================
+  function jump() {
+    if (!player.jumping) {
+      player.vy = jumpForce;
+      player.jumping = true;
+    } else if (player.vy > -8) {
+      // 二段跳（力度稍弱）
+      player.vy = jumpForce * 0.75;
+    }
+  }
+
+  // ============================================
+  // 生成障碍
+  // ============================================
+  function spawn() {
+    var r = Math.floor(Math.random() * 100);
+    if (r < 35) {
+      // 尖刺石柱 - 地面
+      spikes.push({
+        x: SCREEN_W + 10,
+        y: groundY,
+        w: 16,
+        h: 30
+      });
+    } else if (r < 65) {
+      // 幽灵 - 浮空
+      ghosts.push({
+        x: SCREEN_W + 10,
+        y: 220 + Math.floor(Math.random() * 150),
+        w: 28,
+        h: 36,
+        float: Math.random() * Math.PI * 2
+      });
+    } else if (r < 85) {
+      // 血色变异仙人掌 - 地面
+      obstacles.push({
+        x: SCREEN_W + 10,
+        y: groundY,
+        w: 20,
+        h: 40,
+        type: 'cactus'
+      });
+    } else {
+      // 低空恶魔飞鸟
+      ghosts.push({
+        x: SCREEN_W + 10,
+        y: 300 + Math.floor(Math.random() * 80),
+        w: 30,
+        h: 24,
+        float: Math.random() * Math.PI * 2,
+        type: 'bird'
+      });
+    }
+  }
+
+  // ============================================
+  // 更新游戏逻辑
+  // ============================================
+  function update() {
+    tick++;
+
+    // 分数
+    if (tick % 3 === 0) {
+      score++;
+    }
+
+    // 速度随分数提升
+    if (tick % 300 === 0 && speed < 9) {
+      speed++;
+    }
+
+    // 生成障碍
+    var spawnRate = 35 - Math.min(20, Math.floor(score / 20));
+    if (tick % spawnRate === 0) {
+      spawn();
+    }
+
+    // 玩家重力
+    player.vy += gravity;
+    if (player.vy > 18) player.vy = 18;
+    player.y += player.vy;
+    if (player.y >= groundY) {
+      player.y = groundY;
+      player.vy = 0;
+      player.jumping = false;
+    }
+
+    // 更新障碍物
+    var i;
+    for (i = 0; i < spikes.length; i++) {
+      spikes[i].x -= speed;
+    }
+    for (i = 0; i < ghosts.length; i++) {
+      ghosts[i].x -= speed;
+      ghosts[i].float += 0.15;
+    }
+    for (i = 0; i < obstacles.length; i++) {
+      obstacles[i].x -= speed;
+    }
+
+    // 清理离屏
+    spikes = spikes.filter(function (o) { return o.x + o.w > -10; });
+    ghosts = ghosts.filter(function (o) { return o.x + o.w > -10; });
+    obstacles = obstacles.filter(function (o) { return o.x + o.w > -10; });
+
+    // 粒子
+    for (i = 0; i < particles.length; i++) {
+      particles[i].x += particles[i].vx;
+      particles[i].y += particles[i].vy;
+      particles[i].life--;
+    }
+    particles = particles.filter(function (p) { return p.life > 0; });
+
+    // 消息倒计时
+    if (msgTimer > 0) msgTimer--;
+    if (msgTimer === 0) msg = '';
+
+    // 分数触发
+    checkScore();
+
+    // 碰撞检测
+    if (checkHit()) {
+      state = 'over';
+      if (score > best) {
+        best = score;
+        try {
+          this.$localStorage && (this.$localStorage.bestScore = best);
+        } catch (e) {}
+      }
+    }
+  }
+
+  function checkScore() {
+    var triggers = {
+      5: '你不该作弊',
+      15: '作弊就要下地狱',
+      30: '黑暗将吞噬一切',
+      50: '永世沉沦',
+      80: '偷偷撇一眼',
+      120: '道德在哭喊',
+      150: '无处可逃',
+      200: '欢迎来到地狱'
+    };
+    if (triggers[score] && msgTimer === 0) {
+      msg = triggers[score];
+      msgTimer = 80;
+    }
+  }
+
+  function checkHit() {
+    var px = player.x + 6;
+    var py = player.y - player.h + 8;
+    var pw = player.w - 12;
+    var ph = player.h - 10;
+
+    var o, ox, oy, ow, oh, i;
+
+    // 尖刺
+    for (i = 0; i < spikes.length; i++) {
+      o = spikes[i];
+      ox = o.x + 2; oy = o.y - o.h + 4; ow = o.w - 4; oh = o.h - 4;
+      if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) return true;
+    }
+
+    // 幽灵/飞鸟
+    for (i = 0; i < ghosts.length; i++) {
+      o = ghosts[i];
+      var fy = o.y + Math.floor(Math.sin(o.float) * 6);
+      ox = o.x + 2; oy = fy - o.h + 4; ow = o.w - 4; oh = o.h - 6;
+      if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) return true;
+    }
+
+    // 仙人掌
+    for (i = 0; i < obstacles.length; i++) {
+      o = obstacles[i];
+      ox = o.x + 3; oy = o.y - o.h + 6; ow = o.w - 6; oh = o.h - 8;
+      if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) return true;
+    }
+    return false;
+  }
+
+  // ============================================
+  // 绘制
+  // ============================================
+  function draw(ctx) {
+    // 背景 - 暗红渐变
+    ctx.fillStyle = '#1a0505';
+    ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+    // 背景网格（地狱感）
+    ctx.strokeStyle = '#2a0a0a';
+    ctx.lineWidth = 1;
+    var gi;
+    for (gi = 0; gi < 8; gi++) {
+      var gx = ((tick * speed / 3) + gi * 25) % 200;
+      ctx.beginPath();
+      ctx.moveTo(0, 120 + gi * 40);
+      ctx.lineTo(SCREEN_W, 110 + gi * 40);
+      ctx.stroke();
+    }
+
+    // 地面
+    ctx.fillStyle = '#3a0f0f';
+    ctx.fillRect(0, groundY + 10, SCREEN_W, SCREEN_H - groundY - 10);
+    ctx.fillStyle = '#2a0808';
+    for (gi = 0; gi < 30; gi++) {
+      var rx = ((tick * speed) + gi * 15) % 220 - 15;
+      ctx.fillRect(rx, groundY + 20, 8, 3);
+    }
+
+    // 地面裂隙发光
+    var lineGlow = (Math.sin(tick * 0.1) + 1) * 2;
+    ctx.fillStyle = '#6a0000';
+    ctx.fillRect(0, groundY + 10, SCREEN_W, 2 + lineGlow);
+
+    // 绘制幽灵、尖刺、仙人掌
+    var i, o, fy;
+    for (i = 0; i < ghosts.length; i++) {
+      o = ghosts[i];
+      fy = o.y + Math.floor(Math.sin(o.float) * 6);
+      if (o.type === 'bird') {
+        drawBird(ctx, o.x, fy - o.h, o.w, o.h);
+      } else {
+        drawGhost(ctx, o.x, fy - o.h, o.w, o.h);
+      }
+    }
+
+    for (i = 0; i < spikes.length; i++) {
+      o = spikes[i];
+      drawSpike(ctx, o.x, o.y - o.h, o.w, o.h);
+    }
+
+    for (i = 0; i < obstacles.length; i++) {
+      o = obstacles[i];
+      drawCactus(ctx, o.x, o.y - o.h, o.w, o.h);
+    }
+
+    // 粒子
+    for (i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = p.life / 20;
+      ctx.fillRect(p.x, p.y, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+
+    // 玩家
+    drawPlayer(ctx, player.x, player.y - player.h);
+
+    // 分数
+    ctx.fillStyle = '#aa2222';
+    ctx.font = 'bold 16px serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(score, SCREEN_W - 10, 30);
+    ctx.fillStyle = '#555';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('最高', SCREEN_W - 10, 45);
+
+    ctx.textAlign = 'left';
+
+    // 消息
+    if (msgTimer > 0 && msg) {
+      var alpha = Math.min(1, msgTimer / 20);
+      ctx.fillStyle = 'rgba(170, 34, 34, ' + alpha + ')';
+      ctx.font = 'bold 12px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(msg, SCREEN_W / 2, 80);
+      ctx.textAlign = 'left';
+    }
+
+    // 菜单界面
+    if (state === 'menu') {
+      ctx.fillStyle = 'rgba(10, 0, 0, 0.7)';
+      ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+      ctx.fillStyle = '#aa2222';
+      ctx.font = 'bold 22px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('地狱', SCREEN_W / 2, 180);
+      ctx.fillText('狂奔', SCREEN_W / 2, 210);
+
+      ctx.fillStyle = '#666';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('马浩然无尽梦魇', SCREEN_W / 2, 240);
+
+      // 闪烁的开始提示
+      if (Math.floor(tick / 30) % 2 === 0) {
+        ctx.fillStyle = '#888';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('点击开始', SCREEN_W / 2, 280);
+      }
+
+      ctx.fillStyle = '#444';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('最高分 ' + best, SCREEN_W / 2, 310);
+      ctx.textAlign = 'left';
+    }
+
+    // 游戏结束界面
+    if (state === 'over') {
+      ctx.fillStyle = 'rgba(20, 0, 0, 0.8)';
+      ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+      ctx.fillStyle = '#cc2222';
+      ctx.font = 'bold 20px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('无处可逃', SCREEN_W / 2, 180);
+
+      ctx.fillStyle = '#888';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('得分', SCREEN_W / 2, 220);
+      ctx.fillStyle = '#cc2222';
+      ctx.font = 'bold 26px serif';
+      ctx.fillText(score, SCREEN_W / 2, 250);
+
+      ctx.fillStyle = '#555';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('最高 ' + best, SCREEN_W / 2, 280);
+
+      if (Math.floor(tick / 30) % 2 === 0) {
+        ctx.fillStyle = '#888';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('点击重试', SCREEN_W / 2, 330);
+      }
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // ============================================
+  // 绘制辅助函数
+  // ============================================
+  function drawPlayer(ctx, x, y) {
+    // 马浩然 - 恐怖像素形象
+    // 头部 - 巨大
+    ctx.fillStyle = '#1a2a1a';
+    ctx.fillRect(x + 4, y, 24, 26);
+    ctx.fillStyle = '#2a4a2a';
+    ctx.fillRect(x + 5, y + 2, 22, 22);
+
+    // 头发 - 黑色短发
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(x + 2, y - 3, 28, 8);
+    ctx.fillRect(x + 4, y - 5, 24, 5);
+
+    // 眼睛 - 紧闭（褶皱线）
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(x + 8, y + 12, 5, 2);
+    ctx.fillRect(x + 19, y + 12, 5, 2);
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + 14);
+    ctx.lineTo(x + 13, y + 14);
+    ctx.moveTo(x + 19, y + 14);
+    ctx.lineTo(x + 24, y + 14);
+    ctx.stroke();
+
+    // 鼻子
+    ctx.fillStyle = '#1a3a2a';
+    ctx.fillRect(x + 14, y + 16, 4, 5);
+
+    // 大嘴巴 - 撕裂感
+    ctx.fillStyle = '#2a0000';
+    ctx.fillRect(x + 7, y + 22, 18, 5);
+    ctx.fillStyle = '#5a0000';
+    ctx.fillRect(x + 9, y + 23, 14, 3);
+
+    // 超长血红舌头 - 视觉核心
+    ctx.fillStyle = '#8b0000';
+    ctx.fillRect(x + 12, y + 26, 8, 22);
+    ctx.fillStyle = '#6a0000';
+    ctx.fillRect(x + 11, y + 30, 10, 14);
+    // 舌头边缘黑色描边
+    ctx.fillStyle = '#2a0000';
+    ctx.fillRect(x + 10, y + 26, 1, 18);
+    ctx.fillRect(x + 21, y + 26, 1, 18);
+    // 舌头末端
+    ctx.fillStyle = '#4a0000';
+    ctx.fillRect(x + 13, y + 46, 6, 3);
+
+    // 身体 - 浅青绿衣物
+    ctx.fillStyle = '#1a3a3a';
+    ctx.fillRect(x + 6, y + 44, 20, 14);
+    ctx.fillStyle = '#2a4a4a';
+    ctx.fillRect(x + 8, y + 45, 16, 8);
+
+    // 颈部
+    ctx.fillStyle = '#1a2a1a';
+    ctx.fillRect(x + 11, y + 26, 10, 5);
+
+    // 腿部细节
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(x + 8, y + 58, 6, 6);
+    ctx.fillRect(x + 18, y + 58, 6, 6);
+
+    // 运动中的小抖动
+    if (tick % 4 === 0) {
+      ctx.fillStyle = '#3a0a0a';
+      ctx.fillRect(x + 14, y + 40, 1, 2);
+    }
+  }
+
+  function drawSpike(ctx, x, y, w, h) {
+    // 尖刺地狱石柱
+    ctx.fillStyle = '#2a1515';
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x + w / 2, y);
+    ctx.lineTo(x + w, y + h);
+    ctx.closePath();
+    ctx.fill();
+
+    // 内部暗线
+    ctx.fillStyle = '#1a0a0a';
+    ctx.beginPath();
+    ctx.moveTo(x + 3, y + h);
+    ctx.lineTo(x + w / 2, y + 4);
+    ctx.lineTo(x + w / 2, y + h);
+    ctx.closePath();
+    ctx.fill();
+
+    // 底部血光
+    ctx.fillStyle = '#6a0000';
+    ctx.fillRect(x - 1, y + h - 1, w + 2, 2);
+  }
+
+  function drawCactus(ctx, x, y, w, h) {
+    // 血色变异仙人掌
+    ctx.fillStyle = '#3a1a1a';
+    ctx.fillRect(x + 4, y + 6, w - 8, h - 6);
+
+    // 上面小圆
+    ctx.fillStyle = '#2a0a0a';
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + 4, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 滴落的血
+    ctx.fillStyle = '#5a0000';
+    var d = (tick / 10) % 8;
+    ctx.fillRect(x + 2, y + 10 + d, 2, 4);
+    ctx.fillRect(x + w - 4, y + 14 + d / 2, 2, 4);
+
+    // 刺 - 深色细线
+    ctx.fillStyle = '#1a0000';
+    var si;
+    for (si = 0; si < 5; si++) {
+      ctx.fillRect(x + 2, y + 12 + si * 5, 2, 1);
+      ctx.fillRect(x + w - 4, y + 14 + si * 5, 2, 1);
+    }
+  }
+
+  function drawGhost(ctx, x, y, w, h) {
+    // 漂浮的幽灵
+    ctx.fillStyle = '#1a2a2a';
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + 10, w / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#2a3a3a';
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + 10, w / 2 - 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 身体下摆
+    ctx.fillStyle = '#2a3a3a';
+    ctx.fillRect(x + 2, y + 15, w - 4, h - 18);
+    ctx.fillStyle = '#1a2a2a';
+    ctx.fillRect(x + 2, y + h - 6, 4, 3);
+    ctx.fillRect(x + w - 6, y + h - 6, 4, 3);
+    ctx.fillRect(x + w / 2 - 2, y + h - 4, 4, 3);
+
+    // 红色眼睛
+    ctx.fillStyle = '#cc0000';
+    ctx.fillRect(x + 7, y + 8, 3, 4);
+    ctx.fillRect(x + w - 10, y + 8, 3, 4);
+
+    // 嘴巴 - 狰狞
+    ctx.fillStyle = '#2a0000';
+    ctx.fillRect(x + 8, y + 17, w - 16, 3);
+  }
+
+  function drawBird(ctx, x, y, w, h) {
+    // 恶魔飞鸟
+    ctx.fillStyle = '#1a0a0a';
+    ctx.fillRect(x + 6, y + 6, w - 12, 10);
+    ctx.beginPath();
+    ctx.arc(x + w - 6, y + 10, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 翅膀动态
+    var wingPhase = Math.floor(tick / 4) % 2;
+    ctx.beginPath();
+    if (wingPhase === 0) {
+      ctx.moveTo(x + 10, y + 6);
+      ctx.lineTo(x, y - 2);
+      ctx.lineTo(x + 12, y + 2);
+    } else {
+      ctx.moveTo(x + 10, y + 10);
+      ctx.lineTo(x, y + 16);
+      ctx.lineTo(x + 12, y + 10);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    if (wingPhase === 0) {
+      ctx.moveTo(x + w - 12, y + 6);
+      ctx.lineTo(x + w, y - 2);
+      ctx.lineTo(x + w - 10, y + 2);
+    } else {
+      ctx.moveTo(x + w - 12, y + 10);
+      ctx.lineTo(x + w, y + 16);
+      ctx.lineTo(x + w - 10, y + 10);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // 红眼
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(x + w - 6, y + 8, 2, 2);
+
+    // 尖嘴
+    ctx.fillStyle = '#888';
+    ctx.fillRect(x + w - 2, y + 11, 3, 2);
+  }
+
+  // ============================================
+  // 主循环
+  // ============================================
+  function loop() {
+    var ctx;
+    try {
+      ctx = this.$element('gameCanvas').getContext('2d');
+    } catch (e) {
+      // 某些实现用 id 选择器
+      try {
+        ctx = this.$app.$element('gameCanvas').getContext('2d');
+      } catch (e2) {
+        return;
+      }
+    }
+
+    if (state === 'playing') {
+      update();
+    }
+    draw(ctx);
+  }
+
+  // ============================================
+  // 触摸事件
+  // ============================================
+  function onTap() {
+    if (state === 'menu') {
+      init();
+      state = 'playing';
+    } else if (state === 'over') {
+      init();
+      state = 'playing';
+    } else if (state === 'playing') {
+      jump();
+    }
+  }
+
+  // ============================================
+  // 页面生命周期
+  // ============================================
+  module.exports = {
+    onInit: function () {
+      init();
+      // 尝试读取最高分
+      try {
+        if (this.$localStorage && this.$localStorage.bestScore) {
+          best = parseInt(this.$localStorage.bestScore) || 0;
+        }
+      } catch (e) {}
+    },
+
+    onReady: function () {
+      // 设置画布尺寸
+      try {
+        var canvas = this.$element('gameCanvas');
+        canvas.width = SCREEN_W;
+        canvas.height = SCREEN_H;
+      } catch (e) {}
+
+      state = 'menu';
+
+      // 启动主循环（手环通常用 setInterval）
+      var self = this;
+      var intervalTime = 33; // ~30 fps（手环限制）
+
+      try {
+        if (typeof setInterval !== 'undefined') {
+          setInterval(function () { loop.call(self); }, intervalTime);
+        }
+      } catch (e) {}
+    },
+
+    onTouchStart: function (e) {
+      onTap();
+    },
+
+    onKeyDown: function (e) {
+      // 物理按键支持
+      if (e && (e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13)) {
+        onTap();
+      }
+    }
+  };
+</script>
+
+<style>
+  .page {
+    width: 192px;
+    height: 490px;
+    background-color: #0a0000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .canvas {
+    width: 192px;
+    height: 490px;
+  }
+</style>
