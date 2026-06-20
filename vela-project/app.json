@@ -1,0 +1,18 @@
+{
+  "name": "hell-runner-game",
+  "version": "1.0.0",
+  "description": "地狱狂奔 - 马浩然无尽跑酷游戏",
+  "platform": "vela",
+  "target": "band9",
+  "device": {
+    "type": "band",
+    "model": "xiaomi-band-9",
+    "width": 192,
+    "height": 490,
+    "shape": "rect"
+  },
+  "files": [
+    "manifest.json",
+    "pages/index/index.ux"
+  ]
+}
