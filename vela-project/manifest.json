@@ -1,0 +1,57 @@
+{
+  "package": "com.hellrunner.game",
+  "name": "地狱狂奔",
+  "versionName": "1.0",
+  "versionCode": "100",
+  "minPlatformVersion": "1100",
+  "features": [
+    {
+      "name": "system.prompt"
+    }
+  ],
+  "permissions": [
+    {
+      "origin": "device.*",
+      "reason": "获取设备信息"
+    }
+  ],
+  "config": {
+    "logLevel": "off",
+    "designWidth": 192,
+    "pages": "pages/index/index"
+  },
+  "router": {
+    "entry": "pages/index/index",
+    "pages": {
+      "pages/index/index": {
+        "title": "地狱狂奔"
+      }
+    }
+  },
+  "display": {
+    "titleBar": false,
+    "titleText": "地狱狂奔",
+    "titleBarTextSize": 0,
+    "titleBarBgColor": "#000000",
+    "menu": false,
+    "menuStyle": "icon",
+    "statusBar": false,
+    "statusBarBackgroundColor": "#000000",
+    "windowFullScreen": true,
+    "orientation": "portrait",
+    "screenLock": "auto"
+  },
+  "types": [
+    {
+      "type": "watchface"
+    }
+  ],
+  "deviceConfig": {
+    "deviceType": "band",
+    "shape": "rect",
+    "width": 192,
+    "height": 490,
+    "dpi": 320,
+    "fontDensity": 2.0
+  }
+}
